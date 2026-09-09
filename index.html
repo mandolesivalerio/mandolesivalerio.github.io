@@ -26,14 +26,11 @@ table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:11px 12p
 <div class="wrap">
 <header>
 <h1>🏆 Fanta Pronostici 2026/2027</h1>
-<p>Versione pubblica in sola visualizzazione — i dati vengono letti dal file Excel.</p>
+<p>Versione pubblica in sola visualizzazione — i dati vengono letti da Google Sheets.</p>
 </header>
 
 <div class="toolbar">
-<label class="filelabel">📂 Carica un Excel aggiornato
-<input id="file" type="file" accept=".xlsx,.xls" hidden>
-</label>
-<button class="primary" id="reload">↻ Ricarica Excel</button>
+<button class="primary" id="reload">↻ Aggiorna dati</button>
 <select id="round"></select>
 <span class="status" id="status">Caricamento…</span>
 </div>
@@ -43,7 +40,7 @@ table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:11px 12p
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-const DEFAULT_FILE="./FantaPronostici_2026_2027.xlsx";
+const GOOGLE_SHEET_ID="1an80OoLrS72q6HFw6B3je-4tOPqb05RfLNgHD0lm-mI";
 const PLAYERS=["Ale","Dani","Dipa","Mando"];
 let workbook=null, rounds=[];
 
@@ -132,22 +129,65 @@ function render(){
 }
 
 async function loadDefault(){
-  document.getElementById("status").textContent="Caricamento Excel…";
+  document.getElementById("status").textContent="Caricamento Google Sheets…";
+
   try{
-    const res=await fetch(DEFAULT_FILE+"?v="+Date.now());
-    if(!res.ok)throw new Error("file non trovato");
-    workbook=XLSX.read(await res.arrayBuffer(),{type:"array"});
+    const sheets=[
+      "Parametri",
+      ...Array.from({length:38},(_,i)=>"Giornata "+(i+1))
+    ];
+
+    const wb=XLSX.utils.book_new();
+
+    for(const sheetName of sheets){
+      const url =
+        "https://docs.google.com/spreadsheets/d/"
+        + GOOGLE_SHEET_ID
+        + "/gviz/tq?tqx=out:csv&sheet="
+        + encodeURIComponent(sheetName);
+
+      const res=await fetch(url);
+
+      if(!res.ok){
+        if(sheetName==="Parametri") continue;
+        throw new Error("Impossibile leggere "+sheetName);
+      }
+
+      const csv=await res.text();
+
+      if(!csv.trim()){
+        if(sheetName==="Parametri") continue;
+        throw new Error("Scheda vuota: "+sheetName);
+      }
+
+      const temp=XLSX.read(csv,{type:"string"});
+      const sourceSheet=temp.Sheets[temp.SheetNames[0]];
+
+      if(!sourceSheet){
+        throw new Error("Nessun dato trovato in "+sheetName);
+      }
+
+      XLSX.utils.book_append_sheet(wb,sourceSheet,sheetName);
+    }
+
+    workbook=wb;
     render();
+
   }catch(e){
-    document.getElementById("status").textContent="Carica manualmente il file Excel";
-    document.getElementById("content").innerHTML=`<div class="notice"><b>File Excel non trovato automaticamente.</b><br>
-    Se il tuo hosting non consente il caricamento automatico, usa “Carica un Excel aggiornato”.</div>`;
+    console.error("Errore caricamento Google Sheets:",e);
+
+    document.getElementById("status").textContent=
+      "Errore caricamento Google Sheets";
+
+    document.getElementById("content").innerHTML=`
+      <div class="notice">
+        <b>Non riesco a leggere il Google Sheet.</b><br>
+        <small>${esc(e.message)}</small>
+      </div>`;
   }
 }
-document.getElementById("file").addEventListener("change",async e=>{
-  const f=e.target.files[0]; if(!f)return;
-  workbook=XLSX.read(await f.arrayBuffer(),{type:"array"}); render();
-});
+
+
 document.getElementById("reload").onclick=loadDefault;
 document.getElementById("round").onchange=render;
 loadDefault();
